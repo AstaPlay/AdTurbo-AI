@@ -1,7 +1,7 @@
 # AdTurbo Refactor Engine — PROJECT_CONTEXT.md
 
-**Versão:** 0.8 (atualizar ao final de cada sessão)
-**Última atualização:** 2026-07-02
+**Versão:** 0.12 (atualizar ao final de cada sessão)
+**Última atualização:** 2026-07-04
 **SPEC.md:** contrato técnico imutável da arquitetura — este arquivo não o substitui.
 **Propósito deste arquivo:** memória do estado real do projeto para permitir que uma
 nova sessão continue exatamente de onde a anterior parou, sem precisar reler toda a
@@ -65,19 +65,29 @@ Camada 3 — Biblioteca de transformadores
 adturbo-engine/           — raiz da Engine (separada do projeto AdTurbo)
   src/
     config/
-      constants.js        — única fonte de verdade para nomes e padrões
-                             (⚠️ ainda não anexado a nenhuma sessão — ver DT-006)
+      constants.js        — ✅ APROVADO. Única fonte de verdade para
+                             ENGINE_DIR_NAME, RUNS_DIR_NAME, LOCK_FILE_NAME,
+                             TMP_DIR_NAME, BACKUP_DIR_NAME,
+                             ARTIFACT_FILE_NAMES, RUN_ID_PATTERN,
+                             RUN_SEQUENCE_MIN/MAX — o contrato exato já
+                             consumido por paths.js. DT-006 resolvida (ver
+                             seção 15/16).
       constants.draft.js  — ⚠️ RASCUNHO TEMPORÁRIO, não arquitetura definitiva.
-                             Contém apenas KNOWN_BINARIES, usado só por
-                             environment.js até o constants.js real chegar.
+                             Contém KNOWN_BINARIES (environment.js) e
+                             CATEGORIES/SUBSYSTEMS/RISK_LEVELS
+                             (classifier.js). Migração para constants.js
+                             segue pendente — ver DT-007 (deliberadamente
+                             não resolvida nesta sessão; escopo distinto
+                             de DT-006).
     modules/
       paths.js            — ✅ APROVADO
       hash.js             — ✅ APROVADO
       logger.js           — ✅ APROVADO
       environment.js       — ✅ APROVADO
       classifier.js        — ✅ APROVADO (ver seção 13/14)
-      inventory.js         — não iniciado
-      fingerprint.js       — não iniciado
+      inventory.js          — ✅ APROVADO (ver seção 17)
+      fingerprint.js        — ✅ APROVADO (ver seção 18)
+      fingerprint-worker.js — ✅ APROVADO (script interno, ver seção 18)
       manifest.js          — não iniciado
       plan.js               — não iniciado
       report.js             — não iniciado
@@ -86,11 +96,16 @@ adturbo-engine/           — raiz da Engine (separada do projeto AdTurbo)
       analyze.js             — não iniciado
       index.js                — não iniciado
       __tests__/
-        paths.test.js     — ✅ 30 testes, todos passando
+        paths.test.js     — ✅ 30/30 passando (destravado — DT-006
+                               resolvida, ver seção 16)
         hash.test.js      — ✅ 15/15 passando
         logger.test.js    — ✅ 25/25 passando
         environment.test.js — ✅ 27/27 passando (timeout testado com
-                               fixture Node puro, sem dependência de `sleep`)
+                               fixture Node puro, sem dependência de
+                               `sleep`; import de constants.draft.js
+                               corrigido nesta sessão, ver seção 16)
+        inventory.test.js   — ✅ 25/25 passando (ver seção 17)
+        fingerprint.test.js — ✅ 23/23 passando (ver seção 18)
 ```
 
 ### Onde ficam os artefatos gerados (em runtime)
@@ -190,11 +205,26 @@ adturbo-engine/           — raiz da Engine (separada do projeto AdTurbo)
 
 ### ✅ Concluído e aprovado
 
-**`src/config/constants.js`**
+### ✅ `src/config/constants.js` — aprovado (resolve DT-006)
+
 - Única fonte de verdade para: `ENGINE_DIR_NAME`, `RUNS_DIR_NAME`, `LOCK_FILE_NAME`,
   `TMP_DIR_NAME`, `BACKUP_DIR_NAME`, `ARTIFACT_FILE_NAMES` (todos os artefatos de run),
   `RUN_ID_PATTERN`, `RUN_SEQUENCE_MIN/MAX`.
 - Puramente declarativo, sem lógica, sem imports.
+- Escopo desta versão contém **exclusivamente** o bloco já contratado por
+  `paths.js` — todos os valores conferidos contra `paths.js` (destructuring
+  do import) e contra `paths.test.js` (valores literais esperados:
+  `.adturbo-engine`, `runs`, `engine.lock`, `tmp`, `backup`, nomes exatos
+  de artefato, `RUN_ID_PATTERN = /^\d{8}-\d{3}$/`, sequência 1–999).
+- **Deliberadamente NÃO contém** `KNOWN_BINARIES`
+  (`environment.js`/DT-007) nem `CATEGORIES`/`SUBSYSTEMS`/`RISK_LEVELS`
+  (`classifier.js`/DT-007) — permanecem em `constants.draft.js`. Decisão
+  já tomada e não reaberta nesta sessão: nenhum módulo depende dessas
+  constantes estarem em `constants.js` hoje, e migrá-las sem necessidade
+  concreta fundiria DT-006 (resolvida) com DT-007 (ainda aberta) no mesmo
+  commit. Ver seção 15 para o raciocínio completo dessa decisão.
+- **DT-006 resolvida nesta sessão** (2026-07-03) — ver seção 16 para o
+  registro completo da sessão e evidência de execução.
 
 **`src/modules/paths.js`** — aprovado formalmente pelo usuário
 - API pública: `PathsError`, `isValidRunId`, `assertValidRunId`, `formatRunId`,
@@ -283,20 +313,152 @@ API pública: `EnvironmentError`, `detectBinary(name, options?)`, `detectEnviron
   como DT-006 (renumerada nesta sessão a partir da antiga DT-007, após
   a fusão de DT-006 original em DT-003).
 
-**Ação obrigatória pendente (DT-006):** quando o `constants.js` real do
-projeto for anexado a uma sessão futura, migrar o bloco `KNOWN_BINARIES`
-de `constants.draft.js` para dentro dele, atualizar o import em
-`environment.js` para `../config/constants.js`, e apagar
-`constants.draft.js`. Procedimento detalhado no cabeçalho do próprio
+> **Atualização (sessão de 2026-07-03, seção 16):** `constants.js` real foi
+> anexado e DT-006 foi resolvida — mas apenas para o bloco consumido por
+> `paths.js`. `environment.js` **continua**, deliberadamente, importando
+> `KNOWN_BINARIES` de `constants.draft.js` (não migrado; ver DT-007). O
+> parágrafo abaixo ("Ação obrigatória pendente") descreve a migração de
+> `KNOWN_BINARIES`, que **não** foi executada nesta sessão e permanece
+> como ação futura sob DT-007.
+
+**Ação obrigatória pendente (DT-007, ex-parte de DT-006):** quando a
+migração de `KNOWN_BINARIES` for priorizada, mover o bloco de
+`constants.draft.js` para dentro do `constants.js` real e atualizar o
+import em `environment.js` para `../config/constants.js`. **Não apagar
+`constants.draft.js`** nesse momento — o arquivo também contém
+`CATEGORIES`/`SUBSYSTEMS`/`RISK_LEVELS` (seção separada, mesma dívida
+DT-007), usados por `classifier.js`; só pode ser removido quando ambos os
+blocos tiverem migrado. Procedimento detalhado no cabeçalho do próprio
 arquivo de rascunho.
+
+### ✅ `src/modules/classifier.js` — aprovado
+
+Ver seção 13 (decisão arquitetural) e seção 14 (implementação) para o
+registro completo. Resumo: única autoridade para categoria/subsistema/
+risco de um arquivo, via `classify(relativePath)` — pura, síncrona, sem
+I/O, decide exclusivamente por path. 80/80 testes passando em
+`__tests__/classifier.test.js`.
+
+### ✅ `src/modules/inventory.js` — aprovado (seção 17)
+
+API pública: `InventoryError`, `buildInventory(projectRoot, relativePaths)`.
+- Descreve cada arquivo de uma lista de paths **já definida por quem
+  chama** (não descobre/varre arquivos sozinho — nenhum documento do
+  projeto fecha regras de include/exclude). Para cada path retorna
+  `path`, `sizeBytes`, `sha256`, `lastModified`, `category`, `subsystem`,
+  `risk`, `matchedRule`, `error`.
+- **Escopo deliberadamente parcial** em relação ao `inventory.json` da
+  SPEC.md §7: NÃO inclui `exports`/`imports`/`syntaxValid`/`parseError`
+  — esses campos exigem AST e são reservados para `fingerprint.js`
+  (fronteira já fixada em PROJECT_CONTEXT.md, seção 14). Decisão
+  confirmada explicitamente nesta sessão, não presumida.
+- Reaproveita `paths.js:resolveWithinProject` (proteção contra path
+  traversal), `classifier.js:classify` (categoria/subsistema/risco) e
+  `hash.js:hashFile` (SHA-256) — nenhuma lógica duplicada.
+- Erro de **input** (`projectRoot`/`relativePaths` malformado) lança
+  `InventoryError`. Erro por **arquivo individual** (ausente, sem
+  permissão, diretório em vez de arquivo, fora do projeto) nunca lança —
+  fica estruturado em `item.error = { code, message }`, mesmo espírito
+  de `environment.js` (ausência é fato de domínio, não exceção).
+- Classificação roda sempre, mesmo para arquivo inexistente — só
+  `sizeBytes`/`sha256`/`lastModified` dependem do arquivo existir.
+- Concorrência **sequencial** (`for...of` + `await`), decisão explícita
+  do usuário nesta sessão — mesmo padrão conservador de
+  `environment.js:detectEnvironment`.
+- 25/25 testes passando em `__tests__/inventory.test.js`, incluindo hash
+  verificado de forma independente via `node:crypto` puro (não apenas
+  formato), path traversal, arquivo ausente, diretório em vez de
+  arquivo, e confirmação de que os campos de escopo de `fingerprint.js`
+  nunca aparecem no resultado.
+- Bug real encontrado e corrigido durante a sessão (por execução, não
+  revisão estática): erro de `resolveWithinProject` recebia prefixo
+  `PATH_` duplicado sobre um `code` que já era auto-descritivo (ex.:
+  `PATH_PATH_OUTSIDE_PROJECT`). Corrigido para usar `err.code`
+  diretamente.
+- **Nota (não é dívida técnica):** ao inventariar os próprios paths-fonte
+  da Engine (ex.: `"src/modules/paths.js"`), `classify()` retorna
+  `category: "unknown"` / `risk: "high"` para a maioria — confirmado
+  contra `classifier.test.js` (80/80 passando) antes de decidir não
+  tocar em `classifier.js`. O único caso coberto e testado é o prefixo
+  literal `"adturbo-engine/"` (teste `"deriveSubsystem: adturbo-engine/**
+  => engine"`), cenário de "Engine analisando a si mesma como
+  projeto-alvo a partir de um `PROJECT_ROOT` pai" — diferente de rodar
+  com `PROJECT_ROOT` já apontando para a raiz da própria Engine, onde
+  esse prefixo nunca aparece. Nenhum documento do projeto exige que
+  `classifier.js` reconheça os demais paths internos da Engine — é o
+  fail-safe `unknown` já documentado, funcionando como projetado para
+  qualquer path fora das convenções do Next.js App Router do AdTurbo
+  (único domínio para o qual `classifier.js` foi construído).
+  `classifier.js` **não foi modificado** nesta sessão.
+- Ver seção 17 para o registro completo da sessão de implementação.
+
+### ✅ `src/modules/fingerprint.js` — aprovado (seção 18)
+
+API pública: `FingerprintError`, `async function fingerprintFile(absolutePath)`.
+- Determina `syntaxValid`/`parseError` e a lista de módulos importados
+  (`imports`, só `source`) de um arquivo já existente em disco — os
+  campos de "o que o arquivo contém" que SPEC.md §7 atribui à análise
+  via AST, complementares a `inventory.js` (metadados sem abrir
+  conteúdo).
+- **Divergência arquitetural real confirmada e registrada nesta sessão
+  (DT-011):** SPEC.md descreve essa análise como "Camada 2 — Node
+  Engine" usando Babel/Recast (dependências npm, `.mjs`/ESM), invocada
+  por uma "Camada 1 — Bash Engine" via stdin/stdout JSON. Nenhum módulo
+  do projeto é Bash; tudo é Node/CommonJS puro. Decisão explícita do
+  usuário: **PROJECT_CONTEXT.md é a referência arquitetural quando
+  diverge de SPEC.md** — a divergência foi registrada (DT-011), não
+  "resolvida" introduzindo uma arquitetura nova.
+- **Detecção de sintaxe:** `node --check` foi avaliado e **rejeitado**
+  — confirmado por execução real que, em arquivo `.js` contendo
+  `export`/`import` (padrão das routes do AdTurbo), `node --check` pode
+  retornar exit 0 mesmo com erro de sintaxe real mais adiante no
+  arquivo (falso negativo grave, reproduz o padrão do incidente
+  fundador). Adotado `vm.SourceTextModule` (Node core) após protótipo
+  isolado validado contra 4 requisitos (detecção correta, não-execução
+  do código, Node Core puro, zero deps) — 3 de 4 limpos; o requisito de
+  "Node Core puro" exige a flag `--experimental-vm-modules`, que não
+  pode ser ativada seletivamente via `require()`. Mitigação: a checagem
+  roda isolada em subprocesso (`fingerprint-worker.js`, via
+  `child_process.spawnSync`), então o processo pai (testes, futuro
+  `index.js`) não precisa da flag. Registrado como **DT-012** (decisão
+  aceita, não bloqueante).
+- **Escopo deliberadamente reduzido, decisão confirmada, não lacuna:**
+  NÃO produz `exports` nem `imports[].names` — `vm.SourceTextModule`
+  só expõe `moduleRequests` (specifier/source de cada import), sem
+  nomes específicos nem lista de exports. Extrair isso exigiria AST
+  completo (Babel, vetado). Alternativa sem dependências (regex sobre
+  texto-fonte) foi avaliada e descartada por fragilidade (comentários,
+  strings multilinha, imports quebrados em várias linhas) — exatamente
+  o tipo de heurística que o projeto rejeita.
+- Erro de input (`absolutePath` não-string/vazio/relativo) lança
+  `FingerprintError`. Erro de leitura de arquivo ou de infraestrutura
+  do subprocess (spawn falhou, timeout, saída não é JSON) nunca lança
+  — fica estruturado em `result.error`, mesmo espírito de
+  `inventory.js`.
+- Segurança verificada por execução real: conteúdo do arquivo analisado
+  vai via stdin para o subprocesso (`spawnSync` sem `shell: true`) —
+  confirmado que uma string com sintaxe de injeção de shell no
+  conteúdo-fonte não executa comando algum (tratada como dado puro).
+  Confirmado também que o código analisado nunca é executado (só a
+  construção de `SourceTextModule`, sem `link()`/`evaluate()`) — um
+  side effect global de teste não disparou.
+- 23/23 testes passando em `__tests__/fingerprint.test.js`, incluindo o
+  caso crítico (arquivo com `)` órfão no padrão exato do incidente
+  fundador, que `node --check` teria aprovado erroneamente), arquivo
+  binário, diretório, arquivo inexistente, tentativa de injeção via
+  conteúdo, e confirmação de que `exports`/`imports[].names` nunca
+  aparecem no resultado.
+- Ver seção 18 para o registro completo da sessão de implementação,
+  incluindo o protótipo que validou `vm.SourceTextModule` antes de
+  qualquer código de produção.
 
 ---
 
 ## 7. Próximas tarefas em ordem
 
-1. **PRÓXIMO: `src/modules/inventory.js`**
-2. **`src/modules/fingerprint.js`**
-3. **`src/modules/manifest.js`**
+1. ~~`src/modules/inventory.js`~~ — ✅ concluído (seção 17)
+2. ~~`src/modules/fingerprint.js`~~ — ✅ concluído (seção 18)
+3. **PRÓXIMO: `src/modules/manifest.js`**
 4. **`src/modules/plan.js`**
 5. **`src/modules/report.js`**
 6. **`src/modules/lock.js`**
@@ -353,10 +515,13 @@ arquivo de rascunho.
 | DT-003 | SPEC.md não foi atualizada com as últimas mudanças acordadas (v1.1 incompleto). Inclui explicitamente: (a) SPEC.md seção 6 descreve `sha256sum`/`shasum` como binário obrigatório para hashing, mas `hash.js` já resolve hashing via `node:crypto` puro — `environment.js` reflete o estado real (`required: false`), divergindo do texto ainda não atualizado da SPEC | Média | Pendente (pode esperar Fase 2) |
 | DT-004 | Teste de memória em `hash.test.js` (teste "não retém conteúdo em memória") usa threshold heurístico (2MB) — pode ter falsos positivos em ambientes com GC não determinístico | Baixa — documentado no próprio teste | Aceito |
 | DT-005 | `logger.js`: parâmetro `cause` de `LoggerError` existe na API (consistente com `HashError`) mas não é exercitado por nenhum teste, pois nenhum dos três erros atuais (`INVALID_LOG_LEVEL`, `INVALID_PREFIX`, `INVALID_CLOCK`) se origina de uma exceção interna encadeada | Baixa — código morto potencial, mas mantido por consistência de API entre módulos de erro | Aceito, revisar se `cause` seguir sem uso após mais 2-3 módulos |
-| DT-006 | `KNOWN_BINARIES` (usado por `environment.js`) vive isolado em `src/config/constants.draft.js` — um RASCUNHO explícito, não o `constants.js` real do projeto (que contém `ENGINE_DIR_NAME`, `RUNS_DIR_NAME`, `LOCK_FILE_NAME`, `TMP_DIR_NAME`, `BACKUP_DIR_NAME`, `ARTIFACT_FILE_NAMES`, `RUN_ID_PATTERN`, `RUN_SEQUENCE_MIN/MAX`, usados por `paths.js`, e que não foi anexado a nenhuma sessão até o momento) | Alta — risco de conflito/divergência quando o `constants.js` real for anexado; `environment.js` importa de `constants.draft.js`, não do caminho canônico | Pendente — ação obrigatória documentada no cabeçalho de `constants.draft.js`: migrar `KNOWN_BINARIES` para dentro do `constants.js` real, atualizar o import em `environment.js`, apagar o rascunho |
-| DT-007 | `CATEGORIES`, `SUBSYSTEMS`, `RISK_LEVELS` (usados por `classifier.js`) foram adicionados a `src/config/constants.draft.js` como nova seção comentada, no mesmo arquivo de rascunho já usado por `KNOWN_BINARIES` (decisão explícita do usuário — sessão de aprovação de `classifier.js` — para evitar multiplicação de arquivos de rascunho). Isso mistura, no mesmo arquivo temporário, constantes de **ambiente de execução** (`KNOWN_BINARIES`) com constantes de **domínio do projeto-alvo** (categorias/subsistemas/risco do AdTurbo) — naturezas diferentes de configuração | Média — mesmo risco estrutural de DT-006 (divergência ao migrar), agravado por misturar dois domínios de dado no mesmo arquivo; migração terá que mover blocos heterogêneos, não um bloco único | Pendente — ação obrigatória: quando `constants.js` real for anexado, migrar cada seção de `constants.draft.js` (ambiente e domínio) com atenção para não fundir os dois conceitos no arquivo definitivo; manter separação por comentário de seção até lá |
+| DT-006 | `constants.js` real do projeto (contendo `ENGINE_DIR_NAME`, `RUNS_DIR_NAME`, `LOCK_FILE_NAME`, `TMP_DIR_NAME`, `BACKUP_DIR_NAME`, `ARTIFACT_FILE_NAMES`, `RUN_ID_PATTERN`, `RUN_SEQUENCE_MIN/MAX`, usados por `paths.js`) não havia sido anexado a nenhuma sessão | Alta — bloqueava `paths.test.js` (`MODULE_NOT_FOUND`) | ✅ **Resolvida** (sessão 2026-07-03, seção 16) — `src/config/constants.js` criado com o contrato exato exigido por `paths.js`, verificado contra `paths.test.js`. `paths.test.js`: 30/30 passando. **Nota de escopo:** esta resolução cobre apenas o bloco consumido por `paths.js`. A migração de `KNOWN_BINARIES`/`CATEGORIES`/`SUBSYSTEMS`/`RISK_LEVELS` de `constants.draft.js` para `constants.js` **não** faz parte de DT-006 — é DT-007, que permanece pendente |
+| DT-007 | `KNOWN_BINARIES` (usado por `environment.js`) e `CATEGORIES`/`SUBSYSTEMS`/`RISK_LEVELS` (usados por `classifier.js`) permanecem em `src/config/constants.draft.js` — um RASCUNHO explícito, não o `constants.js` real (que já existe e está aprovado, mas contém apenas o bloco de DT-006). O rascunho mistura, no mesmo arquivo, constantes de **ambiente de execução** (`KNOWN_BINARIES`) com constantes de **domínio do projeto-alvo** (categorias/subsistemas/risco do AdTurbo) — naturezas diferentes de configuração | Média — risco de divergência ao migrar; migração terá que mover blocos heterogêneos, não um bloco único; `environment.js` e `classifier.js` continuam importando do caminho não-canônico | Pendente — ação obrigatória: migrar `KNOWN_BINARIES` e `CATEGORIES`/`SUBSYSTEMS`/`RISK_LEVELS` para dentro de `constants.js`, cada seção com atenção para não fundir os dois conceitos no arquivo definitivo; atualizar os quatro pontos de import (`environment.js`, `environment.test.js`, `classifier.js`, `classifier.test.js`); só então apagar `constants.draft.js`. Deliberadamente **não** executada na sessão de DT-006 (2026-07-03) — decisão registrada na seção 15/16 para não fundir os dois escopos no mesmo commit |
 | DT-008 | Bug estrutural de import pré-existente, encontrado por execução real (não suposição) nesta sessão: `src/__tests__/logger.test.js`, `environment.test.js` e `paths.test.js` fazem `require('../logger.js')`, `require('../environment.js')`, `require('../paths')` — mas os módulos reais vivem em `src/modules/`, não em `src/`. Os três falham com `MODULE_NOT_FOUND` ao rodar diretamente do ZIP fornecido nesta sessão. `classifier.test.js` tinha o mesmo bug e **foi corrigido nesta sessão** (escopo autorizado); os outros três **não foram tocados** por estarem fora do escopo desta sessão (só `classifier.js` foi autorizado) | Alta — três suítes de teste já "aprovadas" em sessões anteriores não executam no estado atual do ZIP | Pendente — ação: aplicar a mesma correção de path (`../logger.js` → `../modules/logger.js`, etc.) em sessão futura dedicada, ou explicitamente incluir no escopo da próxima sessão de cada módulo |
 | DT-009 | A tabela de risco aprovada em PROJECT_CONTEXT.md (seção 13, decisão 3) não menciona a categoria `config` em nenhuma faixa (`secret`→critical; `route`/`auth`→high; `lib`/`component`/`page`/`whatsapp-bot`→medium; `test`/`script`→low; `unknown`→high). `deriveRisk()` trata `config` pelo fail-safe (`high`), coerente com o princípio "ausência de regra explícita = cautela", mas isso não foi uma decisão explícita de ninguém sobre `config` especificamente — é uma consequência do fail-safe genérico, não uma regra pensada para esse caso | Baixa/Média — comportamento é seguro (não subestima risco), mas pode não refletir a intenção real (ex.: `next.config.js` talvez devesse ser `medium`, não `high`, dependendo do apetite de risco do usuário) | Pendente — ação: confirmar explicitamente em sessão futura se `config` deveria ter uma faixa própria na tabela de risco, ou se o fail-safe `high` é de fato o comportamento desejado |
+| DT-010 | `PROJECT_CONTEXT.md` (seção 6) documenta `src/modules/__tests__/hash.test.js` como "15/15 testes passando", mas o arquivo **não existe** no ZIP fornecido nesta sessão — confirmado por listagem real de disco (`find . -type f -name "*.js"`), não por suposição. `hash.js` em si existe e está sintaticamente correto, mas não há evidência executável de que os 15 testes documentados ainda passam neste estado do repositório | Média — mesma natureza do DT-008 (documentação descreve um estado que a execução real não confirma); diferente de DT-008 porque aqui o arquivo de teste está ausente, não só com import quebrado | Pendente — fora do escopo desta sessão (autorizada apenas para `inventory.js`). Ação futura: reconstruir `hash.test.js` em sessão dedicada, ou confirmar se foi removido intencionalmente em algum ponto não documentado |
+| DT-011 | SPEC.md, seção 3, descreve uma arquitetura de 3 camadas onde a "Camada 1 — Bash Engine" é literalmente scripts Bash (`.sh`) e a "Camada 2 — Node Engine" usa AST via Babel/Recast (dependências npm, módulos `.mjs`/ESM), invocada via stdin/stdout JSON pela Camada 1. Na prática, **nenhum módulo implementado até hoje é Bash** — `paths.js`, `hash.js`, `logger.js`, `environment.js`, `classifier.js`, `inventory.js` são todos Node/CommonJS puro (`.js`, `require`/`module.exports`, zero dependências npm), incluindo responsabilidades que a SPEC atribui à Camada 1 (inventário, hash/backup, detecção de ambiente). Essa divergência nunca foi decidida explicitamente em nenhuma sessão anterior — foi confirmada e resolvida nesta sessão (ver seção 18): decisão do usuário é que **PROJECT_CONTEXT.md é a referência arquitetural principal quando há conflito com SPEC.md**, mantendo CommonJS, sem ESM, sem dependências npm | Média — não bloqueia nada tecnicamente (a implementação real funciona e é testada), mas SPEC.md permanece desatualizada como documento de referência externo; alguém lendo só a SPEC teria uma expectativa de arquitetura incorreta | Registrada, não "resolvida" com nova arquitetura (decisão explícita do usuário, seção 18) — ação futura opcional: atualizar o texto de SPEC.md para refletir a arquitetura real (Node/CommonJS unificado, sem camada Bash literal), ou manter SPEC.md como "visão original" histórica e PROJECT_CONTEXT.md como fonte de verdade corrente, deixando claro no topo de SPEC.md que diverge do estado real |
+| DT-012 | `fingerprint.js` usa `vm.SourceTextModule` (Node core) para detectar `syntaxValid`/`parseError` de forma confiável em arquivos ESM — ver seção 18 para o protótipo que validou essa escolha. Essa API exige a flag `--experimental-vm-modules` no processo Node que a invoca; confirmado por execução que a flag não pode ser ativada seletivamente de dentro de um módulo `require()`'d por um processo já iniciado sem ela. Mitigação adotada: a chamada roda isolada em subprocesso via `child_process.spawnSync(process.execPath, ["--experimental-vm-modules", ...])`, mesmo padrão já aprovado em `environment.js` — o processo pai (testes, futuro `index.js`) não precisa da flag | Baixa/Média — funciona e foi validado por execução real, mas depende de uma API rotulada "experimental" pelo próprio Node (pode mudar de comportamento em versões futuras) e paga custo de spawn de processo por arquivo verificado (~dezenas de ms cada) | Aceita como decisão de design (não bloqueante). Ação futura: se o custo de spawn por arquivo se mostrar proibitivo em projetos muito grandes, avaliar processar múltiplos arquivos por invocação do subprocesso (batch via stdin com múltiplos documentos), em vez de um spawn por arquivo |
 
 ---
 
@@ -364,15 +529,15 @@ arquivo de rascunho.
 
 | Arquivo | Responsabilidade | Status |
 |---|---|---|
-| `src/config/constants.js` | Nomes, padrões, limites — sem lógica | ⚠️ Ainda não anexado a nenhuma sessão — ver DT-006 |
-| `src/config/constants.draft.js` | RASCUNHO temporário — apenas `KNOWN_BINARIES`, usado só por `environment.js` até o `constants.js` real chegar | ⚠️ Temporário, não é arquitetura definitiva — ver DT-006 |
+| `src/config/constants.js` | Nomes, padrões, limites usados por `paths.js` — sem lógica | ✅ Aprovado (DT-006 resolvida, seção 16) |
+| `src/config/constants.draft.js` | RASCUNHO temporário — `KNOWN_BINARIES` (`environment.js`) e `CATEGORIES`/`SUBSYSTEMS`/`RISK_LEVELS` (`classifier.js`), até migrarem para `constants.js` | ⚠️ Temporário, não é arquitetura definitiva — ver DT-007 |
 | `src/modules/paths.js` | Resolver e validar caminhos | ✅ Aprovado |
 | `src/modules/hash.js` | Hash SHA-256 via streaming + hash síncrono de Buffer | ✅ Aprovado |
 | `src/modules/logger.js` | Único módulo (junto com index.js) autorizado a imprimir no console; níveis DEBUG/INFO/WARN/ERROR com filtragem | ✅ Aprovado |
 | `src/modules/environment.js` | Detectar binários disponíveis no ambiente (via spawn real) e metadados de plataforma/runtime; não decide fallback, não persiste | ✅ Aprovado |
 | `src/modules/classifier.js` | Única autoridade para categoria, subsistema e risco de um arquivo | ✅ Aprovado (seção 14) |
-| `src/modules/inventory.js` | Listar e descrever arquivos do projeto-alvo | Não iniciado |
-| `src/modules/fingerprint.js` | Estado estrutural de um arquivo (imports, exports, funções) | Não iniciado |
+| `src/modules/inventory.js` | Descrever arquivos do projeto-alvo (metadados + classificação; exports/imports/syntaxValid ficam para `fingerprint.js`) | ✅ Aprovado (seção 17) |
+| `src/modules/fingerprint.js` | syntaxValid/parseError (via vm.SourceTextModule em subprocess) + imports (só source); exports e imports.names fora do escopo (ver seção 18) | ✅ Aprovado (seção 18) |
 | `src/modules/manifest.js` | Gerar run-id e escrever artefatos da run | Não iniciado |
 | `src/modules/plan.js` | Gerar plano de transformação antes do backup | Não iniciado |
 | `src/modules/report.js` | Gerar `report.md` legível por humano | Não iniciado |
@@ -824,3 +989,568 @@ sessão.
   continua aberto).
 
 Próximo módulo da fila: `src/modules/inventory.js`.
+
+---
+
+## 15. Sessão de correção — DT-008 (imports quebrados de teste) (2026-07-03)
+
+Escopo: corrigir os imports quebrados registrados em DT-008 (item da seção 14)
+em `logger.test.js`, `environment.test.js` e `paths.test.js`. Cada correção
+foi verificada por execução real (`node <arquivo>.test.js`), não presumida.
+
+### Correções aplicadas
+
+| Arquivo | Linha | Antes | Depois |
+|---|---|---|---|
+| `src/__tests__/paths.test.js` | 14 | `require("..modules/paths")` | `require("../modules/paths")` |
+| `src/__tests__/logger.test.js` | 4 | `require("..modules/logger.js")` | `require("../modules/logger.js")` |
+| `src/__tests__/environment.test.js` | 7 | `require("../environment.js")` | `require("../modules/environment.js")` |
+| `src/__tests__/environment.test.js` | 13 | `require("../../config/constants.draft.js")` | `require("../config/constants.draft.js")` |
+
+**Divergência encontrada:** o comentário original (agora desatualizado) nas
+linhas 8–13 de `environment.test.js` afirmava que a migração futura do DT-006
+trocaria o import para `"../../config/constants.js"` (dois níveis). A
+estrutura real do projeto mostra que um nível (`../config/...`) é o correto
+a partir de `src/__tests__/`. O comentário deve ser corrigido na próxima
+sessão que tocar esse arquivo.
+
+### Resultado de execução real
+
+- `logger.test.js` — ✅ **25/25 passed**
+- `environment.test.js` — ✅ **27/27 passed**
+- `paths.test.js` — ❌ **continua bloqueado**, agora por um motivo diferente
+  e mais profundo do que o typo original de DT-008: `src/modules/paths.js`
+  (linha 65) faz `require("../config/constants")`, que não existe. O
+  `constants.js` real (com `ENGINE_DIR_NAME`, `RUNS_DIR_NAME`,
+  `LOCK_FILE_NAME`, `TMP_DIR_NAME`, `BACKUP_DIR_NAME`,
+  `ARTIFACT_FILE_NAMES`, `RUN_ID_PATTERN`, `RUN_SEQUENCE_MIN/MAX`) nunca foi
+  anexado a nenhuma sessão (DT-006, já registrado na seção 3).
+
+### Decisão tomada nesta sessão: não criar proxy/stub para `constants.js`
+
+Foi cogitado criar `src/config/constants.js` como arquivo-proxy re-exportando
+o conteúdo de `constants.draft.js`, apenas para destravar `paths.test.js`.
+**Decisão: rejeitada.** Motivos:
+1. `constants.draft.js` documenta explicitamente que sua localização fora do
+   caminho canônico é uma garantia estrutural deliberada, não um acidente.
+2. Um proxy que só repassa `KNOWN_BINARIES` não resolveria a dependência real
+   de `paths.js`, que espera campos que não existem em `constants.draft.js`
+   (`ENGINE_DIR_NAME` etc.) — o teste continuaria falhando, só que de forma
+   mais difícil de diagnosticar.
+3. Criar o arquivo no caminho canônico antes da hora arrisca conflito quando
+   o `constants.js` real for anexado em sessão futura.
+
+`paths.test.js` permanece **bloqueado por design**, como consequência
+legítima e documentada do DT-006 — não é uma regressão desta sessão.
+
+### DT-008: estado
+
+**Parcialmente resolvido.** Os três imports com typo/profundidade errada
+foram corrigidos e verificados (`logger.test.js`, `environment.test.js`).
+`paths.test.js` não pode ser considerado "resolvido" via DT-008 porque seu
+bloqueio real é o DT-006 (dependência de `constants.js` ainda não anexado),
+não mais um problema de path relativo.
+
+### Pendências reais para sessões futuras
+
+- **DT-006** (não novo, reafirmado): anexar/migrar `constants.js` real para
+  `src/config/constants.js`. É o único bloqueador confirmado de
+  `paths.test.js`.
+- Corrigir comentário desatualizado sobre profundidade de path em
+  `environment.test.js` (linhas 8–13) na próxima vez que o arquivo for
+  tocado.
+- DT-009 e a pendência de estrutura do bot WhatsApp (seção 14) seguem
+  abertas, inalteradas por esta sessão.
+
+---
+
+## 16. Sessão de resolução — DT-006, `src/config/constants.js` (2026-07-03)
+
+Escopo: criar o `constants.js` real do projeto, resolvendo o bloqueio
+confirmado de `paths.test.js` (DT-006), sem tocar em nenhuma decisão
+arquitetural já aprovada. Análise feita **antes** de qualquer edição:
+leitura completa de SPEC.md, de todo o PROJECT_CONTEXT.md (incluindo o
+histórico de sessões), do destructuring exato em `paths.js` (linhas
+55–65) e dos valores literais esperados em `paths.test.js`. Suíte
+completa executada como baseline **antes** de qualquer mudança, para
+confirmar o estado real (não presumido) do projeto.
+
+### Baseline real (antes da mudança)
+
+```
+node src/__tests__/paths.test.js         → MODULE_NOT_FOUND ('../config/constants')
+node src/__tests__/environment.test.js   → MODULE_NOT_FOUND ('../../config/constants.draft.js')
+node src/__tests__/logger.test.js        → 25/25 passed, exit 0
+node src/__tests__/classifier.test.js    → 80/80 passed, exit 0
+```
+Confirma exatamente o que já estava documentado nas seções 9 e 15 — nenhuma
+surpresa na baseline.
+
+### Decisão: escopo de `constants.js` limitado ao contrato de `paths.js`
+
+Avaliado explicitamente se `KNOWN_BINARIES`, `CATEGORIES`, `SUBSYSTEMS` e
+`RISK_LEVELS` deveriam migrar de `constants.draft.js` para `constants.js`
+nesta mesma sessão. **Decisão: não migrar.** Motivos:
+
+1. Nenhum desses quatro tem, hoje, um contrato de consumo que exija estar
+   em `constants.js` — `environment.js` e `classifier.js` já funcionam
+   corretamente importando do rascunho, com 27/27 e 80/80 testes passando
+   respectivamente antes e depois desta sessão.
+2. A seção 15 (sessão anterior) já havia avaliado e **rejeitado** uma
+   proposta de proxy/atalho envolvendo `constants.js`, justamente para
+   não misturar esse escopo com a resolução pontual de DT-006. Reabrir
+   essa decisão sem fato novo contradiria a própria seção 15.
+3. Migrar tudo de uma vez fundiria DT-006 (bloco de `paths.js`, com
+   contrato fechado e não-ambíguo) com DT-007 (blocos de `environment.js`
+   e `classifier.js`, que exigem atualizar quatro pontos de import
+   diferentes — `environment.js`, `environment.test.js`, `classifier.js`,
+   `classifier.test.js` — e cuja migração o próprio DT-007 já descreve
+   como "heterogênea", não um bloco único).
+4. Princípio já adotado no projeto (ver decisão sobre API mínima em
+   `logger.js`, seção 5): não fazer mudança especulativa sem caso de uso
+   real e imediato.
+
+Consequência: DT-006 tratada como **resolvida** (bloco de `paths.js`).
+DT-007 **permanece pendente**, sem alteração de escopo.
+
+### Implementação
+
+**Arquivo novo: `src/config/constants.js`**
+- Exporta exatamente `ENGINE_DIR_NAME`, `RUNS_DIR_NAME`, `LOCK_FILE_NAME`,
+  `TMP_DIR_NAME`, `BACKUP_DIR_NAME`, `ARTIFACT_FILE_NAMES`,
+  `RUN_ID_PATTERN`, `RUN_SEQUENCE_MIN`, `RUN_SEQUENCE_MAX` — o
+  destructuring exato de `paths.js` linha 55–65, nem mais nem menos.
+- Valores conferidos um a um contra `paths.test.js`: `ENGINE_DIR_NAME =
+  ".adturbo-engine"`, `RUNS_DIR_NAME = "runs"`, `LOCK_FILE_NAME =
+  "engine.lock"`, `TMP_DIR_NAME = "tmp"`, `BACKUP_DIR_NAME = "backup"`,
+  `ARTIFACT_FILE_NAMES` com as 9 chaves usadas em
+  `runArtifactPaths` (`MANIFEST`, `INVENTORY`, `ENVIRONMENT`, `HASHES`,
+  `FINGERPRINT`, `PLAN`, `REPORT`, `ROLLBACK`, `FULL_BACKUP_ARCHIVE`),
+  `RUN_ID_PATTERN = /^\d{8}-\d{3}$/`, `RUN_SEQUENCE_MIN = 1`,
+  `RUN_SEQUENCE_MAX = 999`.
+- Puramente declarativo: sem lógica, sem imports, sem I/O. Todos os
+  objetos com `Object.freeze`, mesma convenção de `constants.draft.js`.
+- JSDoc no cabeçalho documenta explicitamente por que `KNOWN_BINARIES` e
+  as constantes de `classifier.js` **não** estão neste arquivo (aponta
+  para DT-007), para que uma sessão futura não presuma omissão acidental.
+
+**Arquivo modificado: `src/__tests__/environment.test.js`**
+- Único import corrigido: `require("../../config/constants.draft.js")`
+  (dois níveis, quebrado — bug de profundidade já apontado como pendência
+  na seção 15) → `require("../config/constants.draft.js")` (um nível,
+  correto). Comentário do import atualizado para não confundir esta
+  correção com a migração de DT-007 (o import continua apontando para o
+  rascunho, não para `constants.js` — `KNOWN_BINARIES` não migrou).
+- **Nenhuma outra linha do arquivo foi tocada.**
+
+**Nenhum outro arquivo foi modificado.** Confirmado por diff binário
+contra o ZIP original desta sessão: `paths.js`, `environment.js`,
+`classifier.js`, `logger.js`, `constants.draft.js`, `paths.test.js`,
+`logger.test.js` e `classifier.test.js` permanecem byte-a-byte
+idênticos.
+
+### Validação real executada nesta sessão
+
+```
+node --check src/config/constants.js              → OK
+node --check src/__tests__/environment.test.js     → OK
+node src/__tests__/paths.test.js                   → 30 passed, 0 failed, exit 0
+node src/__tests__/environment.test.js             → 27 passed, 0 failed, exit 0
+node src/__tests__/logger.test.js      (regressão) → 25 passed, 0 failed, exit 0
+node src/__tests__/classifier.test.js  (regressão) → 80 passed, 0 failed, exit 0
+```
+
+**Total real: 162/162 testes passando, exit code 0 em todos os arquivos.**
+Nenhuma regressão introduzida em `logger.js`/`classifier.js` (números
+idênticos aos da baseline, antes e depois).
+
+### Estado final
+
+- **DT-006 — ✅ Resolvida.** `paths.test.js` destravado (30/30). `constants.js`
+  aprovado nas seções 3, 6 e 10.
+- **DT-007 — pendente, sem alteração de escopo.** `KNOWN_BINARIES`,
+  `CATEGORIES`, `SUBSYSTEMS`, `RISK_LEVELS` continuam em
+  `constants.draft.js`, com decisão explícita de não migrar nesta sessão
+  (ver acima).
+- DT-003, DT-004, DT-005, DT-009 e a pendência de estrutura do bot
+  WhatsApp — inalteradas.
+- DT-008: nenhuma mudança de status adicional além da já registrada na
+  seção 15 (o item de `environment.test.js` que restava ali era
+  justamente esta correção de path, agora aplicada e verificada).
+
+Engine considerada pronta para iniciar `src/modules/inventory.js`: suas
+dependências diretas (`paths.js`, `hash.js`, `classifier.js`) estão todas
+✅ aprovadas, com testes reais passando, e nenhuma delas depende da
+migração pendente de DT-007.
+
+Próximo módulo da fila: `src/modules/inventory.js`.
+
+---
+
+## 17. Sessão de implementação — `src/modules/inventory.js` (2026-07-03)
+
+Escopo: implementar `inventory.js` seguindo o processo padrão do
+projeto — análise de SPEC.md + PROJECT_CONTEXT.md, definição de
+arquitetura antes de código, levantamento de decisões pendentes ao
+usuário, só então implementação e testes. Nenhuma alteração autorizada
+em módulos já aprovados, salvo bug real comprovado por execução.
+
+### Fase 1 — Análise
+
+Releitura completa de SPEC.md §7 (formato de `inventory.json`), do
+destructuring exato de `paths.js` (reaproveitado, não modificado), da
+API pública de `hash.js` (`hashFile`, assíncrona) e `classifier.js`
+(`classify`, síncrona/pura). Identificado um ponto de tensão real entre
+documentos: SPEC.md §7 descreve `inventory.json` incluindo
+`exports`/`imports`/`syntaxValid`/`parseError`, mas PROJECT_CONTEXT.md
+(seção 14) já reserva explicitamente "decidir o que o arquivo contém,
+via AST" para `fingerprint.js`, ainda não implementado. Não presumido:
+levado ao usuário como decisão explícita antes de codar.
+
+Confirmado por listagem real de disco (`find . -type f -name "*.js"`)
+que `src/modules/__tests__/hash.test.js`, documentado em
+PROJECT_CONTEXT.md como "15/15 passando", **não existe** no ZIP desta
+sessão. Registrado como **DT-010** (nova), fora do escopo autorizado
+desta sessão (só `inventory.js`) — não reconstruído.
+
+### Fase 2 — Decisões levantadas ao usuário (3 perguntas, todas respondidas)
+
+1. **Fronteira SPEC §7 vs. fingerprint.js:** decidido que `inventory.js`
+   emite apenas os campos que não exigem AST (`path`, `sizeBytes`,
+   `sha256`, `lastModified`, `category`/`subsystem`/`risk` via
+   `classifier.js`) e **omite** `exports`/`imports`/`syntaxValid`/
+   `parseError`, documentando a lacuna até `fingerprint.js` existir.
+2. **Concorrência do walk + hash:** decidido processamento **sequencial**
+   (`for...of` + `await`), mesmo padrão conservador de
+   `environment.js:detectEnvironment`.
+3. **`hash.test.js` ausente:** decidido registrar como dívida técnica
+   nova (DT-010) e seguir com `inventory.js` sem recriar o arquivo de
+   teste ausente (fora do escopo desta sessão).
+
+### Fase 3 — Implementação
+
+**Arquivo novo: `src/modules/inventory.js`**
+- API pública: `InventoryError`, `async function buildInventory(projectRoot, relativePaths)`.
+- Recebe a lista de arquivos-alvo já resolvida por quem chama — não faz
+  walk recursivo nem decide regras de include/exclude (nenhum documento
+  do projeto fecha essas regras; decisão arquitetural não autorizada
+  nesta sessão).
+- Reaproveita, sem duplicar lógica: `paths.js:resolveWithinProject`
+  (proteção contra path traversal), `classifier.js:classify`
+  (categoria/subsistema/risco), `hash.js:hashFile` (SHA-256).
+- Erro de input (`projectRoot`/`relativePaths` malformado) lança
+  `InventoryError` com `code` estável (`INVALID_PROJECT_ROOT`,
+  `INVALID_RELATIVE_PATHS`). Erro por arquivo individual (ausente, sem
+  permissão, diretório em vez de arquivo, fora do projeto) nunca lança —
+  fica estruturado em `item.error = { code, message }`, mesmo espírito
+  de `environment.js` (ausência é fato de domínio, não exceção da API).
+- Classificação roda sempre, mesmo para arquivo inexistente no disco —
+  só `sizeBytes`/`sha256`/`lastModified` dependem da existência real do
+  arquivo.
+
+**Arquivo novo: `src/__tests__/inventory.test.js`**
+- Mesma convenção de runner manual do projeto (sem dependências
+  externas, `process.exit(1)` em falha).
+- Projeto-alvo fake criado em `os.tmpdir()`/`fs.mkdtempSync` (mesmo
+  padrão de `paths.test.js`), com limpeza (`fs.rmSync`) ao final.
+- 25 testes cobrindo: validação de input, formato do resultado, metadados
+  de arquivo existente (incluindo hash **verificado de forma
+  independente** via `node:crypto` puro, não apenas formato/regex),
+  classificação integrada, erros por arquivo (ausente, diretório,
+  path traversal) sem exceção lançada, processamento misto
+  sucesso/erro sem abortar, ausência confirmada dos campos reservados a
+  `fingerprint.js`, e não-mutação do array de entrada.
+
+**Nenhum outro arquivo foi modificado.** `classifier.js`, `hash.js`,
+`paths.js`, `environment.js`, `logger.js`, `constants.js`,
+`constants.draft.js` e todos os testes pré-existentes permanecem
+byte-a-byte idênticos — confirmado por diff contra o ZIP original desta
+sessão.
+
+### Observação levantada durante a Fase 3 (comportamento de `classifier.js`, sem alteração)
+
+Ao rodar um smoke-test inicial contra os próprios paths-fonte da Engine
+(ex.: `"src/modules/paths.js"`), `classify()` retornou
+`category: "unknown"` / `risk: "high"`. Investigado **antes de qualquer
+alteração**, conforme instrução explícita do usuário nesta sessão:
+
+- `SPEC.md`: nenhuma menção a classificar arquivos-fonte da própria
+  Engine — todas as referências a `.adturbo-engine/` tratam do diretório
+  de artefatos gerados em runtime, não do código-fonte da Engine.
+- `PROJECT_CONTEXT.md`: nenhuma seção exige que `classifier.js`
+  reconheça paths internos da Engine além do prefixo `"adturbo-engine/"`
+  já implementado.
+- `classifier.test.js` (80/80 passando, não alterado): o único caso
+  testado e aprovado é `deriveSubsystem("adturbo-engine/src/modules/
+  paths.js", ...) === SUBSYSTEMS.ENGINE` — path prefixado literalmente
+  por `"adturbo-engine/"`, cenário de "Engine analisando a si mesma como
+  projeto-alvo a partir de um `PROJECT_ROOT` pai". Já
+  `"src/modules/__tests__/paths.test.js"` (linha 237 do teste) cai na
+  regra `test` por conter `__tests__/`, sem relação com o subsistema
+  `engine`.
+- Um smoke-test com `PROJECT_ROOT` já apontando para a raiz da própria
+  Engine nunca produz esse prefixo nos paths relativos — logo o
+  resultado `unknown/high` é o fail-safe já documentado funcionando como
+  projetado para qualquer path fora das convenções do Next.js App Router
+  do AdTurbo, não uma lacuna.
+
+**Conclusão: não há contrato explícito que exija a mudança. `classifier.js`
+não foi modificado nesta sessão.** Registrado como nota (não como DT
+nova, por não haver lacuna real) no cabeçalho de `inventory.js` e na
+seção 6 deste documento, para que sessões futuras não confundam esse
+comportamento com bug.
+
+### Bug real corrigido (encontrado por execução, dentro do código novo desta sessão)
+
+Erro retornado por `resolveWithinProject` (ex.: `code:
+"PATH_OUTSIDE_PROJECT"`) estava recebendo um prefixo `"PATH_"` adicional
+em `describeFile`, produzindo códigos redundantes como
+`"PATH_PATH_OUTSIDE_PROJECT"`. Corrigido para usar `err.code`
+diretamente. **Este bug estava no código escrito nesta própria sessão**
+(não em módulo já aprovado) — não se enquadra na restrição de "só
+corrigir módulos aprovados com bug comprovado", mas é registrado aqui
+para rastreabilidade.
+
+### Validação real executada nesta sessão
+
+```
+node --check src/modules/inventory.js               → OK
+node --check src/__tests__/inventory.test.js         → OK
+node src/__tests__/inventory.test.js                 → 25 passed, 0 failed, exit 0
+
+Regressão completa da suíte (nenhum módulo aprovado tocado):
+node src/__tests__/paths.test.js                     → 30 passed, 0 failed, exit 0
+node src/__tests__/environment.test.js               → 27 passed, 0 failed, exit 0
+node src/__tests__/logger.test.js                    → 25 passed, 0 failed, exit 0
+node src/__tests__/classifier.test.js                → 80 passed, 0 failed, exit 0
+node src/__tests__/inventory.test.js                 → 25 passed, 0 failed, exit 0
+```
+
+**Total real: 187/187 testes passando, exit code 0 em todos os arquivos.**
+Nenhuma regressão. Confirmado por diff binário contra o ZIP original:
+`paths.js`, `hash.js`, `environment.js`, `classifier.js`, `logger.js`,
+`constants.draft.js` e os testes pré-existentes de `paths`, `logger` e
+`classifier` permanecem idênticos.
+
+### Estado final
+
+- **`src/modules/inventory.js` — ✅ Aprovado.**
+- **DT-010 — nova, pendente.** `hash.test.js` ausente do ZIP; fora do
+  escopo desta sessão.
+- DT-006 — permanece ✅ Resolvida (sessão anterior, inalterada).
+- DT-007, DT-008, DT-009 — permanecem pendentes, sem alteração de
+  escopo nesta sessão.
+- `classifier.js` — permanece ✅ Aprovado, **não modificado** nesta
+  sessão; comportamento observado documentado como nota, não como bug.
+
+Próximo módulo da fila: `src/modules/fingerprint.js`.
+
+**Sessão 17 consolidada e encerrada em 2026-07-03.** `inventory.js`
+permanece ✅ Aprovado e não deve ser reaberto sem bug real comprovado por
+execução. DT-010 permanece pendente, sem ação nesta consolidação.
+
+
+---
+
+## 18. Sessão de implementação — `src/modules/fingerprint.js` (2026-07-04)
+
+Escopo: implementar `fingerprint.js` seguindo a mesma disciplina de
+sessões anteriores — ler SPEC.md + PROJECT_CONTEXT.md, fechar o contrato
+antes de codificar, levantar decisões pendentes ao usuário, só então
+implementar e validar. Nenhuma alteração em módulos já aprovados
+(`inventory.js` explicitamente confirmado como não-reaberto).
+
+### Fase 1 — Análise: divergência arquitetural real encontrada
+
+Releitura de SPEC.md §3 (arquitetura) revelou uma tensão não presumível:
+a SPEC descreve 3 camadas — "Camada 1: Bash Engine" (inventário, backup,
+ambiente, relatórios, orquestração pura, nunca edita JS) e "Camada 2:
+Node Engine" (transformações via AST, Babel/Recast, um transformador por
+arquivo `.mjs`, invocada por stdin/stdout JSON pela Camada 1). Na
+prática, **nenhum módulo implementado até hoje é Bash** —
+`paths.js`, `hash.js`, `logger.js`, `environment.js`, `classifier.js`,
+`inventory.js` são todos Node/CommonJS puro, incluindo responsabilidades
+que a SPEC atribui à Camada 1. Confirmado por grep em todo o
+PROJECT_CONTEXT.md que essa divergência nunca havia sido decidida
+explicitamente antes. Registrada como **DT-011** e levada ao usuário
+antes de prosseguir — não presumida nem resolvida por conta própria.
+
+**Decisão do usuário:** PROJECT_CONTEXT.md é a referência arquitetural
+principal quando há conflito com SPEC.md. Manter CommonJS
+(`require`/`module.exports`), não introduzir ESM (`.mjs`), não adicionar
+dependências npm sem necessidade comprovada. Divergências devem ser
+registradas no PROJECT_CONTEXT.md, não resolvidas criando uma
+arquitetura nova. `fingerprint.js` implementado compatível com a
+arquitetura atual da Engine (Node/CommonJS).
+
+### Fase 1 (continuação) — Achado técnico crítico: `node --check` não confiável
+
+Antes de desenhar a detecção de `syntaxValid`, testado por execução real
+se `node --check` (usado em sessões anteriores como ferramenta de dev)
+seria adequado para este contrato formal. Resultado, confirmado com
+casos progressivamente mais realistas:
+
+- `node --check arquivo.jsx` → falha com `ERR_UNKNOWN_FILE_EXTENSION`
+  (falso positivo de "inválido" para um arquivo `.jsx` sintaticamente
+  correto — Node não reconhece a extensão).
+- `node --check arquivo.js` contendo `export`/`import` E um erro de
+  sintaxe real mais adiante (`);` órfão) → **retornou exit 0 (válido)**.
+  Confirmado isolando a causa: é a combinação específica de extensão
+  `.js` + presença de `export`, que faz `wrapSafe` (carregador CJS do
+  Node) tratar o arquivo de um jeito que não alcança o erro adiante no
+  arquivo. `require()` real do mesmo arquivo lança `SyntaxError`
+  corretamente, mas rodar `require()` executaria o módulo (efeito
+  colateral inaceitável).
+- Reproduzido com um caso **estruturalmente idêntico** a
+  `app/api/produtos/route.js` (citado na própria SPEC §7): múltiplos
+  imports, dois `export async function`, `);` órfão no final — mesmo
+  padrão do incidente fundador da Engine (`adturbo-fix-auth.sh`) que
+  motivou a existência do projeto. `node --check` aprovou esse arquivo
+  como válido.
+
+Esse achado foi levado ao usuário antes de prosseguir, com o exato
+comando/saída que o comprova.
+
+### Fase 2 — Protótipo isolado de `vm.SourceTextModule` (autorizado pelo usuário antes de qualquer código de produção)
+
+Por instrução explícita: prototipar `vm.SourceTextModule` isoladamente e
+validar 4 requisitos antes de adotá-lo, com a condição de que, se
+qualquer requisito falhasse, o resultado seria uma DT nova — não uma
+heurística improvisada.
+
+**Resultado do protótipo (`/tmp/vm-proto`, descartado após a sessão):**
+
+| Requisito | Resultado |
+|---|---|
+| 1. Detecta erros de sintaxe ESM corretamente (incluindo o caso que `node --check` errou) | ✅ Passou — reproduziu e detectou corretamente o `);` órfão no caso realista de `route.js`; detectou chave não fechada; ESM válido passou como válido |
+| 2. Não executa o código do módulo | ✅ Passou — construir `SourceTextModule` sem chamar `.link()`/`.evaluate()` só faz parsing; um side effect global de teste não disparou |
+| 3. Funciona apenas com Node Core | ⚠️ Parcial — a API é 100% Node Core (`node:vm`), mas **exige a flag `--experimental-vm-modules`** no processo que a invoca; confirmado por execução que a flag não pode ser ativada seletivamente via `require()` de um processo já iniciado sem ela (`require('vm').SourceTextModule` é `undefined` sem a flag no processo) |
+| 4. Sem dependências npm | ✅ Passou — nenhum `package.json`/`node_modules` envolvido |
+
+Por não ser 100% limpo (requisito 3), essa lacuna foi levada ao usuário
+com a mitigação já testada (isolar em subprocesso via
+`child_process.spawnSync`, mesmo padrão já aprovado em `environment.js`
+para detecção de binários — confirmado por execução que o processo pai
+não precisa da flag quando o subprocesso a recebe na sua própria
+invocação). **Decisão do usuário:** adotar `vm.SourceTextModule` via
+subprocesso isolado, aceitando o custo de spawn por arquivo. Registrado
+como **DT-012** (decisão de design aceita, não bloqueante).
+
+Também confirmado no protótipo: `vm.SourceTextModule` expõe
+`mod.moduleRequests` (specifier/source de cada import), mas **não**
+expõe nomes específicos importados nem lista de exports. Extrair
+`imports[].names`/`exports` exigiria AST completo (Babel, vetado por
+zero dependências). Regex sobre texto-fonte foi avaliada e descartada
+por fragilidade real (comentários contendo "import", strings
+multilinha, imports quebrados em várias linhas) — o próprio tipo de
+heurística improvisada que o usuário instruiu a evitar. **Decisão do
+usuário:** escopo reduzido — `fingerprint.js` produz `syntaxValid`,
+`parseError` e `imports[].source`; **não** produz `exports` nem
+`imports[].names`, documentado como decisão de escopo, não lacuna.
+
+### Fase 3 — Implementação
+
+**Arquivo novo: `src/modules/fingerprint-worker.js`**
+- Script interno, não é API pública (não deve ser `require()`'d por
+  outros módulos). Roda como processo filho isolado, invocado por
+  `fingerprint.js` via `spawnSync` sempre com
+  `--experimental-vm-modules`.
+- Lê o código-fonte via stdin, constrói `vm.SourceTextModule` (sem
+  `link()`/`evaluate()`), escreve um único JSON em stdout:
+  `{ syntaxValid, importSources }` ou `{ syntaxValid: false,
+  importSources: [], parseError }`.
+
+**Arquivo novo: `src/modules/fingerprint.js`**
+- API pública: `FingerprintError`, `async function
+  fingerprintFile(absolutePath)`.
+- Recebe path absoluto já resolvido por quem chama (mesmo padrão de
+  `paths.js`/`hash.js` — não faz resolução de path relativo nem
+  verificação de path traversal, isso é responsabilidade de
+  `paths.js`).
+- Lê o arquivo com `fs.readFileSync`, passa o conteúdo via stdin ao
+  subprocesso (`fingerprint-worker.js`), mapeia o resultado.
+- Erro de input lança `FingerprintError`. Erro de leitura de arquivo ou
+  de infraestrutura do subprocess (spawn falhou, timeout via
+  `SUBPROCESS_TIMEOUT_MS = 10_000`, saída não é JSON válido, processo
+  morto por sinal) nunca lança — fica estruturado em `result.error`.
+
+**Arquivo novo: `src/__tests__/fingerprint.test.js`**
+- Mesma convenção de runner manual do projeto.
+- Fixtures reais em `os.tmpdir()`/`fs.mkdtempSync` (mesmo padrão de
+  `inventory.test.js`), com limpeza ao final.
+- 23 testes cobrindo: validação de input, sintaxe válida com imports,
+  o caso crítico do `);` órfão no padrão exato do incidente fundador,
+  chave não fechada, arquivo vazio, CommonJS puro (sem import/export
+  ESM), arquivo binário, arquivo inexistente, diretório em vez de
+  arquivo, confirmação de não-execução do código analisado (side
+  effect global não dispara), confirmação de que não há RCE via
+  conteúdo com sintaxe de injeção de shell (tratado como dado puro via
+  stdin, sem `shell: true`), e confirmação de que `exports`/
+  `imports[].names` nunca aparecem no resultado (escopo reduzido).
+
+**Nenhum outro arquivo foi modificado.** `paths.js`, `hash.js`,
+`environment.js`, `classifier.js`, `logger.js`, `inventory.js`,
+`constants.js`, `constants.draft.js` e todos os testes pré-existentes
+permanecem byte-a-byte idênticos — confirmado por diff contra o ZIP
+original desta sessão. `inventory.js`, especificamente, não foi
+reaberto, conforme instrução explícita do usuário.
+
+### Verificações de segurança executadas (não apenas assumidas)
+
+- **Injeção de comando via conteúdo analisado:** testado com uma string
+  no código-fonte contendo sintaxe de injeção de shell
+  (`` `; touch marker; ` ``) — confirmado que nenhum comando foi
+  executado, porque `spawnSync` recebe o conteúdo via `input` (stdin),
+  sem `shell: true`, então a string nunca é interpretada por um shell.
+- **Execução não intencional do código analisado:** testado com um
+  arquivo que, se executado, setaria uma variável global — confirmado
+  que a variável nunca foi setada, porque `vm.SourceTextModule` sem
+  `link()`/`evaluate()` só faz parsing.
+- **Timeout do subprocesso:** testado isoladamente que
+  `spawnSync(..., { timeout })` realmente mata o processo filho
+  (`result.error.code === "ETIMEDOUT"` e/ou `result.signal ===
+  "SIGTERM"`), confirmando que os dois ramos de tratamento de erro no
+  código (`WORKER_TIMEOUT`/`WORKER_KILLED`) são alcançáveis e corretos.
+
+### Validação real executada nesta sessão
+
+```
+node --check src/modules/fingerprint-worker.js       → OK
+node --check src/modules/fingerprint.js               → OK
+node --check src/__tests__/fingerprint.test.js         → OK
+node src/__tests__/fingerprint.test.js                 → 23 passed, 0 failed, exit 0 (656ms)
+
+Regressão completa da suíte (nenhum módulo aprovado tocado):
+node src/__tests__/paths.test.js                       → 30 passou(aram), 0 falhou(aram), exit 0
+node src/__tests__/environment.test.js                 → 27 passed, 0 failed, exit 0
+node src/__tests__/logger.test.js                      → 25 passed, 0 failed, exit 0
+node src/__tests__/classifier.test.js                  → 80 passed, 0 failed, exit 0
+node src/__tests__/inventory.test.js                   → 25 passed, 0 failed, exit 0
+node src/__tests__/fingerprint.test.js                 → 23 passed, 0 failed, exit 0
+```
+
+**Total real: 210/210 testes passando, exit code 0 em todos os arquivos.**
+Nenhuma regressão. `node --check` válido nos 10 arquivos de
+módulo/config do projeto.
+
+### Estado final
+
+- **`src/modules/fingerprint.js` — ✅ Aprovado.**
+- **`src/modules/fingerprint-worker.js` — ✅ Aprovado** (script interno,
+  não é API pública).
+- **DT-011 — nova, registrada, não bloqueante.** Divergência SPEC.md
+  (arquitetura 3 camadas, Bash + Babel/ESM) vs. implementação real
+  (Node/CommonJS unificado). Decisão do usuário: PROJECT_CONTEXT.md é a
+  referência corrente; SPEC.md permanece como documento historicamente
+  desatualizado, sem reescrita da arquitetura real para "encaixar" nela.
+- **DT-012 — nova, aceita como decisão de design, não bloqueante.**
+  `vm.SourceTextModule` exige `--experimental-vm-modules`; mitigado via
+  subprocesso isolado. Ação futura opcional: batelar múltiplos arquivos
+  por invocação do subprocesso, se o custo de spawn por arquivo se
+  mostrar proibitivo em projetos grandes.
+- DT-006, DT-007, DT-008, DT-009, DT-010 — sem alteração de status
+  nesta sessão.
+- `inventory.js`, `classifier.js` e os demais módulos aprovados —
+  **não modificados**, conforme instrução explícita.
+
+Próximo módulo da fila: `src/modules/manifest.js`.
